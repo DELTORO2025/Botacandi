@@ -17,16 +17,19 @@ import gspread
 # =====================================================
 # Cargar variables de entorno
 # =====================================================
-load_dotenv()
+# Solo es necesario cargar dotenv si usas un archivo .env, en este caso no lo usamos.
+# load_dotenv()
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-SHEET_ID = os.getenv("SHEET_ID")
-GOOGLE_CREDENTIALS = os.getenv("GOOGLE_CREDENTIALS")
+BOT_TOKEN = os.getenv("BOT_TOKEN")  # Obtiene el token de Telegram desde las variables de entorno de Railway
+SHEET_ID = os.getenv("SHEET_ID")  # Obtiene el ID de la hoja de Google Sheets
+GOOGLE_CREDENTIALS = os.getenv("GOOGLE_CREDENTIALS")  # Obtiene las credenciales de Google (JSON)
 
+# Verificación de que las variables están presentes
 print("[ENV] BOT_TOKEN:", bool(BOT_TOKEN))
 print("[ENV] SHEET_ID:", SHEET_ID)
 print("[ENV] GOOGLE_CREDENTIALS:", bool(GOOGLE_CREDENTIALS))
 
+# Si falta alguna variable, lanza un error
 if not BOT_TOKEN:
     raise RuntimeError("❌ Falta BOT_TOKEN en Railway")
 if not SHEET_ID:
@@ -37,10 +40,10 @@ if not GOOGLE_CREDENTIALS:
 # =====================================================
 # Conexión Google Sheets
 # =====================================================
-creds = json.loads(GOOGLE_CREDENTIALS)
-gc = gspread.service_account_from_dict(creds)
-sh = gc.open_by_key(SHEET_ID)
-worksheet = sh.sheet1
+creds = json.loads(GOOGLE_CREDENTIALS)  # Convierte el string de GOOGLE_CREDENTIALS en un objeto JSON
+gc = gspread.service_account_from_dict(creds)  # Autenticación con las credenciales de Google
+sh = gc.open_by_key(SHEET_ID)  # Abre la hoja de cálculo utilizando el SHEET_ID
+worksheet = sh.sheet1  # Accede a la primera hoja
 
 # =====================================================
 # Estados
@@ -50,7 +53,7 @@ ESTADOS = {
     "A": ("🟡", "Acuerdo"),
     "R": ("🔴", "Restricción"),
     "RESTRICCION": ("🔴", "Restricción"),
-    "RESTRICCIÓN": ("🔴", "Restricción"),
+    "RESTRICIÓN": ("🔴", "Restricción"),
 }
 
 # =====================================================
