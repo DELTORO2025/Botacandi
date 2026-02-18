@@ -71,30 +71,43 @@ def get_any(fila: dict, *candidatos: str, default=""):
 def normalizar(txt):
     return str(txt or "").strip().upper()
 
-def extraer_numeros(texto: str):
-    return re.findall(r'\d+', texto)
-
 # =====================================================
-# NUEVA INTERPRETACIÓN CORRECTA
+# INTERPRETAR APARTAMENTO (VERSIÓN COMPLETA)
 # =====================================================
 def interpretar_apto(texto: str):
     """
-    Acepta formatos:
+    Acepta:
+    1104
+    101270
     11 1278
-    11-1278
-    11,1278
-    11/1278
+    12-1270
+    Torre 10 Apto 1270
     """
 
-    numeros = extraer_numeros(texto)
+    numeros = re.findall(r'\d+', texto)
 
+    # Caso 1: vienen dos números separados
     if len(numeros) >= 2:
         try:
-            torre = int(numeros[0])
-            apto = int(numeros[1])
-            return torre, apto
+            return int(numeros[0]), int(numeros[1])
         except:
             return None
+
+    # Caso 2: viene un solo número
+    if len(numeros) == 1:
+        dig = numeros[0]
+
+        # Probar torre de 2 dígitos primero (ej: 101270)
+        if len(dig) >= 5:
+            torre2 = int(dig[:2])
+            apto2 = int(dig[2:])
+            return torre2, apto2
+
+        # Luego torre de 1 dígito (ej: 1104)
+        if len(dig) >= 4:
+            torre1 = int(dig[0])
+            apto1 = int(dig[1:])
+            return torre1, apto1
 
     return None
 
@@ -103,7 +116,12 @@ def interpretar_apto(texto: str):
 # =====================================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 Envíame Torre y Apartamento.\nEjemplo:\n11 1278"
+        "👋 Envíame el número de apartamento.\n\n"
+        "Ejemplos válidos:\n"
+        "1104\n"
+        "101270\n"
+        "11 1278\n"
+        "Torre 10 Apto 1270"
     )
 
 # =====================================================
@@ -115,12 +133,11 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     datos = worksheet.get_all_records()
-
     resultado = interpretar_apto(texto)
 
     if not resultado:
         await update.message.reply_text(
-            "❌ Formato inválido.\nUsa: 11 1278"
+            "❌ Formato inválido.\nEjemplo: 1104 o 11 1278"
         )
         return
 
