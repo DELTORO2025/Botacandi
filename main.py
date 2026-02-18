@@ -14,7 +14,6 @@ import gspread
 # =====================================================
 # Variables de entorno
 # =====================================================
-
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 SHEET_ID = os.getenv("SHEET_ID")
 GOOGLE_CREDENTIALS = os.getenv("GOOGLE_CREDENTIALS")
@@ -29,7 +28,6 @@ if not GOOGLE_CREDENTIALS:
 # =====================================================
 # Google Sheets
 # =====================================================
-
 creds = json.loads(GOOGLE_CREDENTIALS)
 gc = gspread.service_account_from_dict(creds)
 sh = gc.open_by_key(SHEET_ID)
@@ -38,19 +36,17 @@ worksheet = sh.sheet1
 # =====================================================
 # Estados
 # =====================================================
-
 ESTADOS = {
     "N": ("🟢", "Normal"),
     "A": ("🟡", "Acuerdo"),
     "R": ("🔴", "Restricción"),
     "RESTRICCION": ("🔴", "Restricción"),
-    "RESTRICCIÓN": ("🔴", "Restricción"),
+    "RESTRICIÓN": ("🔴", "Restricción"),
 }
 
 # =====================================================
 # Utilidades
 # =====================================================
-
 def escape_html(texto):
     """Evita que caracteres especiales dañen el formato HTML"""
     return (
@@ -93,16 +89,15 @@ def interpretar_apto_candidatos(texto: str):
     dig = extraer_numeros(texto)
     if len(dig) < 3:
         return []
-    torre = int(dig[:2])
-    apto = int(dig[2:])
-    if 1 <= torre <= 12:
+    torre = int(dig[:3])  # Permitimos hasta tres dígitos en la torre
+    apto = int(dig[3:])
+    if 1 <= torre <= 12:  # Verifica si la torre está en el rango esperado
         return [(torre, apto)]
     return []
 
 # =====================================================
 # /start
 # =====================================================
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 Envíame un número de apartamento o una placa."
@@ -111,7 +106,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =====================================================
 # BÚSQUEDA
 # =====================================================
-
 async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto = (update.message.text or "").strip()
     if not texto:
@@ -122,7 +116,6 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ===============================
     # BUSCAR POR APARTAMENTO
     # ===============================
-
     candidatos = interpretar_apto_candidatos(texto)
 
     for fila in datos:
@@ -133,7 +126,6 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
             continue
 
         if any(torre_i == tb and apto_i == ab for (tb, ab) in candidatos):
-
             piso = escape_html(get_any(fila, "Piso", default=""))
             propietario = escape_html(get_any(fila, "Propietario", default="N/A"))
             saldo = escape_html(get_any(fila, "Saldo", default="N/A"))
@@ -164,7 +156,6 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =====================================================
 # MAIN
 # =====================================================
-
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
