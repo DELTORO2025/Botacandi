@@ -3,37 +3,51 @@ import logging
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
+from telegram.ext import (
+    ApplicationBuilder,
+    ContextTypes,
+    MessageHandler,
+    CommandHandler,
+    filters,
+)
 from html import escape as escape_html
 
-# ==============================
-# CONFIGURACIÓN
-# ==============================
+# =====================================================
+# 🔐 CONFIGURACIÓN
+# =====================================================
 
-TOKEN = "TU_TOKEN_AQUI"
-SHEET_NAME = "TU_HOJA_AQUI"
+TOKEN = "PON_AQUI_TU_TOKEN"
+SHEET_NAME = "PON_AQUI_EL_NOMBRE_DE_TU_HOJA"
+CREDENTIALS_FILE = "credenciales.json"
 
-logging.basicConfig(level=logging.INFO)
+# =====================================================
+# LOGGING
+# =====================================================
 
-# ==============================
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
+
+# =====================================================
 # GOOGLE SHEETS
-# ==============================
+# =====================================================
 
 scope = [
     "https://spreadsheets.google.com/feeds",
-    "https://www.googleapis.com/auth/drive"
+    "https://www.googleapis.com/auth/drive",
 ]
 
 creds = ServiceAccountCredentials.from_json_keyfile_name(
-    "credenciales.json", scope
+    CREDENTIALS_FILE, scope
 )
 
 client = gspread.authorize(creds)
 worksheet = client.open(SHEET_NAME).sheet1
 
-# ==============================
+# =====================================================
 # FUNCIONES AUXILIARES
-# ==============================
+# =====================================================
 
 def get_any(row, *keys, default=""):
     for key in keys:
@@ -41,8 +55,10 @@ def get_any(row, *keys, default=""):
             return row[key]
     return default
 
+
 def normalizar(texto):
     return str(texto).strip().lower()
+
 
 ESTADOS = {
     "normal": ("🟢", "Normal"),
@@ -50,9 +66,9 @@ ESTADOS = {
     "bloqueado": ("⛔", "Bloqueado"),
 }
 
-# ==============================
+# =====================================================
 # INTERPRETAR APARTAMENTO
-# ==============================
+# =====================================================
 
 def interpretar_apto(texto, datos):
     limpio = re.sub(r"\D", "", texto)
@@ -67,7 +83,6 @@ def interpretar_apto(texto, datos):
         except:
             continue
 
-        # Caso 11006 → torre 1 apto 1006
         combinado = f"{torre}{apto}"
 
         if limpio == str(apto):
@@ -78,77 +93,70 @@ def interpretar_apto(texto, datos):
 
     return None
 
-# ==============================
-# BUSCADOR PRINCIPAL
-# ==============================
+# =====================================================
+# COMANDO START
+# =====================================================
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    mensaje = (
+        "👋 Bienvenido.\n\n"
+        "Puedes buscar por:\n"
+        "• Número de apartamento (1104, 11006, 11 1006)\n"
+        "• Placa (RPH360, HTX-213)\n"
+    )
+    await update.message.reply_text(mensaje)
+
+# =====================================================
+# FUNCIÓN PRINCIPAL
+# =====================================================
 
 async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     texto = (update.message.text or "").strip()
-    datos = worksheet.get_all_records()
 
     if not texto:
         return
 
-    # ==============================
-    # 1️⃣ BUSCAR POR PLACA
-    # ==============================
+    try:
+        datos = worksheet.get_all_records()
+    except Exception as e:
+        await update.message.reply_text("❌ Error leyendo la base de datos.")
+        return
 
-    placa_input = re.sub(r'[^A-Za-z0-9]', '', texto).upper()
+    # =====================================================
+    # 1️⃣ BUSCAR POR PLACA
+    # =====================================================
+
+    placa_input = re.sub(r"[^A-Za-z0-9]", "", texto).upper()
 
     if any(c.isalpha() for c in placa_input) and any(c.isdigit() for c in placa_input):
 
         for fila in datos:
 
             placa_carro = re.sub(
-                r'[^A-Za-z0-9]', '',
-                str(get_any(fila, "Placa Carro")).upper()
+                r"[^A-Za-z0-9]", "",
+                str(get_any(fila, "Placa Carro", default="")).upper()
             )
 
             placa_moto = re.sub(
-                r'[^A-Za-z0-9]', '',
-                str(get_any(fila, "Placa Moto")).upper()
+                r"[^A-Za-z0-9]", "",
+                str(get_any(fila, "Placa Moto", default="")).upper()
             )
 
             if placa_input == placa_carro or placa_input == placa_moto:
 
-                torre = get_any(fila, "Torre")
-                apto = get_any(fila, "Apartamento", "Apto")
-                propietario = escape_html(get_any(fila, "Propietario", default="N/A"))
-                saldo = escape_html(get_any(fila, "Saldo", default="N/A"))
-                placa_carro_raw = escape_html(get_any(fila, "Placa Carro", default="No registrado"))
-                placa_moto_raw = escape_html(get_any(fila, "Placa Moto", default="No registrada"))
-                stikers = escape_html(get_any(fila, "Stikers", "Stickers", default="N/A"))
+                return await enviar_respuesta(update, fila)
 
-                estado_raw = normalizar(get_any(fila, "Estado"))
-                emoji, estado_txt = ESTADOS.get(estado_raw, ("⚪", "No especificado"))
+        return await update.message.reply_text("❌ Placa no encontrada.")
 
-                respuesta = (
-                    f"🏢 <b>Torre:</b> {torre}\n"
-                    f"🏠 <b>Apartamento:</b> {apto}\n"
-                    f"👤 <b>Propietario:</b> {propietario}\n"
-                    f"💰 <b>Saldo:</b> {saldo}\n"
-                    f"{emoji} <b>Estado:</b> {estado_txt}\n"
-                    f"🚗 <b>Placa carro:</b> {placa_carro_raw}\n"
-                    f"🏍️ <b>Placa moto:</b> {placa_moto_raw}\n"
-                    f"🏷️ <b>Stikers:</b> {stikers}"
-                )
-
-                await update.message.reply_text(respuesta, parse_mode="HTML")
-                return
-
-        await update.message.reply_text("❌ Placa no encontrada.")
-        return
-
-    # ==============================
+    # =====================================================
     # 2️⃣ BUSCAR POR APARTAMENTO
-    # ==============================
+    # =====================================================
 
     resultado = interpretar_apto(texto, datos)
 
     if not resultado:
-        await update.message.reply_text("❌ No encontrado.")
-        return
+        return await update.message.reply_text("❌ No encontrado.")
 
     torre_buscar, apto_buscar = resultado
 
@@ -160,38 +168,52 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
             continue
 
         if torre == torre_buscar and apto == apto_buscar:
-
-            propietario = escape_html(get_any(fila, "Propietario", default="N/A"))
-            saldo = escape_html(get_any(fila, "Saldo", default="N/A"))
-            placa_carro = escape_html(get_any(fila, "Placa Carro", default="No registrado"))
-            placa_moto = escape_html(get_any(fila, "Placa Moto", default="No registrada"))
-            stikers = escape_html(get_any(fila, "Stikers", "Stickers", default="N/A"))
-
-            estado_raw = normalizar(get_any(fila, "Estado"))
-            emoji, estado_txt = ESTADOS.get(estado_raw, ("⚪", "No especificado"))
-
-            respuesta = (
-                f"🏢 <b>Torre:</b> {torre}\n"
-                f"🏠 <b>Apartamento:</b> {apto}\n"
-                f"👤 <b>Propietario:</b> {propietario}\n"
-                f"💰 <b>Saldo:</b> {saldo}\n"
-                f"{emoji} <b>Estado:</b> {estado_txt}\n"
-                f"🚗 <b>Placa carro:</b> {placa_carro}\n"
-                f"🏍️ <b>Placa moto:</b> {placa_moto}\n"
-                f"🏷️ <b>Stikers:</b> {stikers}"
-            )
-
-            await update.message.reply_text(respuesta, parse_mode="HTML")
-            return
+            return await enviar_respuesta(update, fila)
 
     await update.message.reply_text("❌ No encontrado.")
 
-# ==============================
+# =====================================================
+# FORMATEAR RESPUESTA
+# =====================================================
+
+async def enviar_respuesta(update, fila):
+
+    torre = get_any(fila, "Torre")
+    apto = get_any(fila, "Apartamento", "Apto")
+    propietario = escape_html(get_any(fila, "Propietario", default="N/A"))
+    saldo = escape_html(get_any(fila, "Saldo", default="N/A"))
+    placa_carro = escape_html(get_any(fila, "Placa Carro", default="No registrado"))
+    placa_moto = escape_html(get_any(fila, "Placa Moto", default="No registrada"))
+    stikers = escape_html(get_any(fila, "Stikers", "Stickers", default="N/A"))
+
+    estado_raw = normalizar(get_any(fila, "Estado"))
+    emoji, estado_txt = ESTADOS.get(estado_raw, ("⚪", "No especificado"))
+
+    respuesta = (
+        f"🏢 <b>Torre:</b> {torre}\n"
+        f"🏠 <b>Apartamento:</b> {apto}\n"
+        f"👤 <b>Propietario:</b> {propietario}\n"
+        f"💰 <b>Saldo:</b> {saldo}\n"
+        f"{emoji} <b>Estado:</b> {estado_txt}\n"
+        f"🚗 <b>Placa carro:</b> {placa_carro}\n"
+        f"🏍️ <b>Placa moto:</b> {placa_moto}\n"
+        f"🏷️ <b>Stikers:</b> {stikers}"
+    )
+
+    await update.message.reply_text(respuesta, parse_mode="HTML")
+
+# =====================================================
 # INICIAR BOT
-# ==============================
+# =====================================================
 
-app = ApplicationBuilder().token(TOKEN).build()
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, buscar))
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
 
-print("Bot iniciado...")
-app.run_polling()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, buscar))
+
+    print("✅ Bot iniciado correctamente...")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
