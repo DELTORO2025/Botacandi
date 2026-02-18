@@ -72,42 +72,42 @@ def normalizar(txt):
     return str(txt or "").strip().upper()
 
 # =====================================================
-# INTERPRETAR APARTAMENTO (VERSIÓN COMPLETA)
+# INTERPRETAR APARTAMENTO INTELIGENTE
 # =====================================================
-def interpretar_apto(texto: str):
-    """
-    Acepta:
-    1104
-    101270
-    11 1278
-    12-1270
-    Torre 10 Apto 1270
-    """
-
+def interpretar_apto(texto: str, datos):
     numeros = re.findall(r'\d+', texto)
 
-    # Caso 1: vienen dos números separados
+    if not numeros:
+        return None
+
+    # Si vienen dos números separados → directo
     if len(numeros) >= 2:
-        try:
-            return int(numeros[0]), int(numeros[1])
-        except:
-            return None
+        return int(numeros[0]), int(numeros[1])
 
-    # Caso 2: viene un solo número
-    if len(numeros) == 1:
-        dig = numeros[0]
+    # Si viene uno solo → probar combinaciones reales
+    dig = numeros[0]
 
-        # Probar torre de 2 dígitos primero (ej: 101270)
-        if len(dig) >= 5:
-            torre2 = int(dig[:2])
-            apto2 = int(dig[2:])
-            return torre2, apto2
+    posibles = []
 
-        # Luego torre de 1 dígito (ej: 1104)
-        if len(dig) >= 4:
-            torre1 = int(dig[0])
-            apto1 = int(dig[1:])
-            return torre1, apto1
+    # Probar torre de 1 dígito
+    if len(dig) >= 4:
+        posibles.append((int(dig[0]), int(dig[1:])))
+
+    # Probar torre de 2 dígitos
+    if len(dig) >= 5:
+        posibles.append((int(dig[:2]), int(dig[2:])))
+
+    # Verificar cuál existe realmente en el Sheet
+    for torre_test, apto_test in posibles:
+        for fila in datos:
+            try:
+                torre_i = int(str(get_any(fila, "Torre", default="")).strip())
+                apto_i = int(str(get_any(fila, "Apartamento", "Apto", default="")).strip())
+            except:
+                continue
+
+            if torre_i == torre_test and apto_i == apto_test:
+                return torre_test, apto_test
 
     return None
 
@@ -116,12 +116,12 @@ def interpretar_apto(texto: str):
 # =====================================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 Envíame el número de apartamento.\n\n"
-        "Ejemplos válidos:\n"
+        "👋 Envíame el número del apartamento.\n\n"
+        "Ejemplos:\n"
         "1104\n"
-        "101270\n"
+        "11006\n"
         "11 1278\n"
-        "Torre 10 Apto 1270"
+        "Torre 1 Apto 1006"
     )
 
 # =====================================================
@@ -133,12 +133,11 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     datos = worksheet.get_all_records()
-    resultado = interpretar_apto(texto)
+
+    resultado = interpretar_apto(texto, datos)
 
     if not resultado:
-        await update.message.reply_text(
-            "❌ Formato inválido.\nEjemplo: 1104 o 11 1278"
-        )
+        await update.message.reply_text("❌ No encontrado.")
         return
 
     torre_buscar, apto_buscar = resultado
@@ -175,8 +174,6 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             await update.message.reply_text(respuesta, parse_mode="HTML")
             return
-
-    await update.message.reply_text("❌ No encontrado.")
 
 # =====================================================
 # MAIN
