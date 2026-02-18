@@ -85,15 +85,16 @@ def es_placa(texto: str) -> bool:
 def extraer_numeros(texto: str) -> str:
     return "".join(c for c in (texto or "") if c.isdigit())
 
+# Modificación en la interpretación de apartamento y torre
 def interpretar_apto_candidatos(texto: str):
     dig = extraer_numeros(texto)
     if len(dig) < 3:
         return []
-    torre = int(dig[:3])  # Permitimos hasta tres dígitos en la torre
-    apto = int(dig[3:])
-    if 1 <= torre <= 12:  # Verifica si la torre está en el rango esperado
-        return [(torre, apto)]
-    return []
+    
+    # Cambiar el límite para aceptar torres hasta el 30
+    torre = int(dig[:2]) if int(dig[:2]) <= 30 else int(dig[:3])  # Aceptamos torres hasta 30
+    apto = int(dig[2:])
+    return [(torre, apto)]
 
 # =====================================================
 # /start
@@ -166,3 +167,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
