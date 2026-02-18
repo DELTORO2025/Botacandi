@@ -12,7 +12,7 @@ from telegram.ext import (
 import gspread
 
 # =====================================================
-# Variables de entorno (Railway)
+# Variables de entorno
 # =====================================================
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -20,14 +20,14 @@ SHEET_ID = os.getenv("SHEET_ID")
 GOOGLE_CREDENTIALS = os.getenv("GOOGLE_CREDENTIALS")
 
 if not BOT_TOKEN:
-    raise RuntimeError("❌ Falta BOT_TOKEN en Railway")
+    raise RuntimeError("❌ Falta BOT_TOKEN")
 if not SHEET_ID:
-    raise RuntimeError("❌ Falta SHEET_ID en Railway")
+    raise RuntimeError("❌ Falta SHEET_ID")
 if not GOOGLE_CREDENTIALS:
-    raise RuntimeError("❌ Falta GOOGLE_CREDENTIALS en Railway")
+    raise RuntimeError("❌ Falta GOOGLE_CREDENTIALS")
 
 # =====================================================
-# Conexión Google Sheets
+# Google Sheets
 # =====================================================
 
 creds = json.loads(GOOGLE_CREDENTIALS)
@@ -50,6 +50,15 @@ ESTADOS = {
 # =====================================================
 # Utilidades
 # =====================================================
+
+def escape_html(texto):
+    """Evita que caracteres especiales dañen el formato HTML"""
+    return (
+        str(texto or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
 
 def norm_key(s: str) -> str:
     return re.sub(r"\s+", " ", str(s or "").strip().lower())
@@ -81,30 +90,14 @@ def extraer_numeros(texto: str) -> str:
     return "".join(c for c in (texto or "") if c.isdigit())
 
 def interpretar_apto_candidatos(texto: str):
-    t = str(texto or "").strip().lower()
-
-    # formato "torre X apto Y"
-    m = re.search(r"\b(torre|tor|t)\s*[:\-]?\s*(\d{1,2})\b", t)
-    n = re.search(r"\b(apto|apartamento|apt|a)\s*[:\-]?\s*(\d{1,5})\b", t)
-    if m and n:
-        return [(int(m.group(2)), int(n.group(2)))]
-
     dig = extraer_numeros(texto)
     if len(dig) < 3:
         return []
-
-    candidatos = []
     torre = int(dig[:2])
     apto = int(dig[2:])
     if 1 <= torre <= 12:
-        candidatos.append((torre, apto))
-
-    return candidatos
-
-def parsear_lista_placas(celda: str):
-    raw = str(celda or "")
-    partes = re.split(r"[,\n;/]+", raw)
-    return [normalizar_placa(p) for p in partes if p.strip()]
+        return [(torre, apto)]
+    return []
 
 # =====================================================
 # /start
@@ -112,21 +105,11 @@ def parsear_lista_placas(celda: str):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 Envíame un apartamento o una placa.\n\n"
-        "Ejemplos apartamento:\n"
-        "101270\n"
-        "12-1270\n"
-        "2202\n"
-        "1101\n"
-        "Torre 10 Apto 1270\n\n"
-        "Ejemplos placa:\n"
-        "RPH360\n"
-        "XTH15Y\n"
-        "HTX-213"
+        "👋 Envíame un número de apartamento o una placa."
     )
 
 # =====================================================
-# Búsqueda
+# BÚSQUEDA
 # =====================================================
 
 async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -136,71 +119,11 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     datos = worksheet.get_all_records()
 
-    # -------------------------
-    # BUSCAR POR PLACA
-    # -------------------------
-    if es_placa(texto):
-        placa_b = normalizar_placa(texto)
-
-        for fila in datos:
-            placas = set(
-                parsear_lista_placas(get_any(fila, "Placa Carro", default="")) +
-                parsear_lista_placas(get_any(fila, "Placa Moto", default=""))
-            )
-
-            if placa_b in placas:
-
-                torre = get_any(fila, "Torre", default="")
-                apto = get_any(fila, "Apartamento", "Apto", default="")
-                piso = get_any(fila, "Piso", default="")
-                propietario = get_any(fila, "Propietario", default="N/A")
-                saldo = get_any(fila, "Saldo", default="N/A")
-                placa_carro = get_any(fila, "Placa Carro", default="No registrado")
-                placa_moto = get_any(fila, "Placa Moto", default="No registrada")
-                stikers = get_any(fila, "Stikers", "Stickers", default="N/A")
-
-                estado_raw = normalizar(get_any(fila, "Estado", default=""))
-                emoji, estado_txt = ESTADOS.get(estado_raw, ("⚪", "No especificado"))
-
-                respuesta = (
-                    f"🔎 Placa buscada: {placa_b}\n\n"
-                    f"🏢 Torre: {torre}\n"
-                    + (f"🛗 Piso: {piso}\n" if str(piso).strip() else "")
-                    + f"🏠 Apartamento: {apto}\n"
-                    f"🧍 Propietario: {propietario}\n"
-                    f"💰 Saldo: {saldo}\n"
-                    f"{emoji} Estado: {estado_txt}\n"
-                    f"🚗 Placa carro: {placa_carro}\n"
-                    f"🏍️ Placa moto: {placa_moto}\n"
-                    f"🏷 Stikers: {stikers}"
-                )
-
-                await update.message.reply_text(respuesta)
-                return
-
-        await update.message.reply_text(f"❌ No encontré la placa {placa_b}")
-        return
-
-    # -------------------------
+    # ===============================
     # BUSCAR POR APARTAMENTO
-    # -------------------------
-    candidatos = interpretar_apto_candidatos(texto)
+    # ===============================
 
-    if not candidatos:
-        await update.message.reply_text(
-            "❌ No pude leer lo que enviaste.\n\n"
-            "Ejemplos apartamento:\n"
-            "101270\n"
-            "12-1270\n"
-            "2202\n"
-            "1101\n"
-            "Torre 10 Apto 1270\n\n"
-            "Ejemplos placa:\n"
-            "RPH360\n"
-            "XTH15Y\n"
-            "HTX-213"
-        )
-        return
+    candidatos = interpretar_apto_candidatos(texto)
 
     for fila in datos:
         try:
@@ -211,32 +134,32 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if any(torre_i == tb and apto_i == ab for (tb, ab) in candidatos):
 
-            piso = get_any(fila, "Piso", default="")
-            propietario = get_any(fila, "Propietario", default="N/A")
-            saldo = get_any(fila, "Saldo", default="N/A")
-            placa_carro = get_any(fila, "Placa Carro", default="No registrado")
-            placa_moto = get_any(fila, "Placa Moto", default="No registrada")
-            stikers = get_any(fila, "Stikers", "Stickers", default="N/A")
+            piso = escape_html(get_any(fila, "Piso", default=""))
+            propietario = escape_html(get_any(fila, "Propietario", default="N/A"))
+            saldo = escape_html(get_any(fila, "Saldo", default="N/A"))
+            placa_carro = escape_html(get_any(fila, "Placa Carro", default="No registrado"))
+            placa_moto = escape_html(get_any(fila, "Placa Moto", default="No registrada"))
+            stikers = escape_html(get_any(fila, "Stikers", "Stickers", default="N/A"))
 
             estado_raw = normalizar(get_any(fila, "Estado", default=""))
             emoji, estado_txt = ESTADOS.get(estado_raw, ("⚪", "No especificado"))
 
             respuesta = (
-                f"🏢 Torre: {torre_i}\n"
-                + (f"🛗 Piso: {piso}\n" if str(piso).strip() else "")
-                + f"🏠 Apartamento: {apto_i}\n"
-                f"🧍 Propietario: {propietario}\n"
-                f"💰 Saldo: {saldo}\n"
-                f"{emoji} Estado: {estado_txt}\n"
-                f"🚗 Placa carro: {placa_carro}\n"
-                f"🏍️ Placa moto: {placa_moto}\n"
-                f"🏷 Stikers: {stikers}"
+                f"🏢 <b>Torre:</b> {torre_i}\n"
+                f"🏠 <b>Apartamento:</b> {apto_i}\n"
+                + (f"🛗 <b>Piso:</b> {piso}\n" if piso else "")
+                + f"👤 <b>Propietario:</b> {propietario}\n"
+                f"💰 <b>Saldo:</b> {saldo}\n"
+                f"{emoji} <b>Estado:</b> {estado_txt}\n"
+                f"🚗 <b>Placa carro:</b> {placa_carro}\n"
+                f"🏍️ <b>Placa moto:</b> {placa_moto}\n"
+                f"🏷️ <b>Stikers:</b> {stikers}"
             )
 
-            await update.message.reply_text(respuesta)
+            await update.message.reply_text(respuesta, parse_mode="HTML")
             return
 
-    await update.message.reply_text("❌ Apartamento no encontrado")
+    await update.message.reply_text("❌ No encontrado.")
 
 # =====================================================
 # MAIN
@@ -247,7 +170,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, buscar))
 
-    print("🤖 BOT ACTIVO EN RAILWAY")
+    print("🤖 BOT ACTIVO")
     app.run_polling()
 
 if __name__ == "__main__":
