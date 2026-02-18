@@ -41,14 +41,13 @@ ESTADOS = {
     "A": ("🟡", "Acuerdo"),
     "R": ("🔴", "Restricción"),
     "RESTRICCION": ("🔴", "Restricción"),
-    "RESTRICIÓN": ("🔴", "Restricción"),
+    "RESTRICCIÓN": ("🔴", "Restricción"),
 }
 
 # =====================================================
 # Utilidades
 # =====================================================
 def escape_html(texto):
-    """Evita que caracteres especiales dañen el formato HTML"""
     return (
         str(texto or "")
         .replace("&", "&amp;")
@@ -72,36 +71,39 @@ def get_any(fila: dict, *candidatos: str, default=""):
 def normalizar(txt):
     return str(txt or "").strip().upper()
 
-def normalizar_placa(txt):
-    t = str(txt or "").strip().upper()
-    return t.replace(" ", "").replace("-", "")
+def extraer_numeros(texto: str):
+    return re.findall(r'\d+', texto)
 
-def es_placa(texto: str) -> bool:
-    t = normalizar_placa(texto)
-    if len(t) < 4 or len(t) > 10:
-        return False
-    return any(c.isalpha() for c in t) and any(c.isdigit() for c in t)
+# =====================================================
+# NUEVA INTERPRETACIÓN CORRECTA
+# =====================================================
+def interpretar_apto(texto: str):
+    """
+    Acepta formatos:
+    11 1278
+    11-1278
+    11,1278
+    11/1278
+    """
 
-def extraer_numeros(texto: str) -> str:
-    return "".join(c for c in (texto or "") if c.isdigit())
+    numeros = extraer_numeros(texto)
 
-# Modificación en la interpretación de apartamento y torre
-def interpretar_apto_candidatos(texto: str):
-    dig = extraer_numeros(texto)
-    if len(dig) < 3:
-        return []
-    
-    # Cambiar el límite para aceptar torres hasta el 30
-    torre = int(dig[:2]) if int(dig[:2]) <= 30 else int(dig[:3])  # Aceptamos torres hasta 30
-    apto = int(dig[2:])
-    return [(torre, apto)]
+    if len(numeros) >= 2:
+        try:
+            torre = int(numeros[0])
+            apto = int(numeros[1])
+            return torre, apto
+        except:
+            return None
+
+    return None
 
 # =====================================================
 # /start
 # =====================================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 Envíame un número de apartamento o una placa."
+        "👋 Envíame Torre y Apartamento.\nEjemplo:\n11 1278"
     )
 
 # =====================================================
@@ -114,10 +116,15 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     datos = worksheet.get_all_records()
 
-    # ===============================
-    # BUSCAR POR APARTAMENTO
-    # ===============================
-    candidatos = interpretar_apto_candidatos(texto)
+    resultado = interpretar_apto(texto)
+
+    if not resultado:
+        await update.message.reply_text(
+            "❌ Formato inválido.\nUsa: 11 1278"
+        )
+        return
+
+    torre_buscar, apto_buscar = resultado
 
     for fila in datos:
         try:
@@ -126,7 +133,7 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             continue
 
-        if any(torre_i == tb and apto_i == ab for (tb, ab) in candidatos):
+        if torre_i == torre_buscar and apto_i == apto_buscar:
             piso = escape_html(get_any(fila, "Piso", default=""))
             propietario = escape_html(get_any(fila, "Propietario", default="N/A"))
             saldo = escape_html(get_any(fila, "Saldo", default="N/A"))
@@ -167,4 +174,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
