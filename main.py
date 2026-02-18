@@ -140,8 +140,8 @@ def interpretar_apto_candidatos(texto: str):
         if 1 <= torre_a <= 12:
             candidatos.append((torre_a, apto_a))
 
-    # 2B) Handle more than 5 digits or any other cases
-    elif len(dig) > 5:
+    # 2B) Handle more than 3 digits or any other cases
+    elif len(dig) > 3:  # Cambié aquí de 5 a 3 para que también funcione con números más pequeños como 1404
         torre = int(dig[:2])  # First two digits as the tower
         apto = int(dig[2:])   # Remaining as apartment
         if 1 <= torre <= 12:
