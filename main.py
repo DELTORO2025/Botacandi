@@ -140,9 +140,9 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Si se encuentra alguna placa en el texto, buscar por placa
     if placas_encontradas:
-        placa_buscar = placas_encontradas[0]  # Tomamos la primera placa encontrada
+        placa_buscar = placas_encontradas[0].upper()  # Convertir la placa a mayúsculas
         for fila in datos:
-            placa_carro = escape_html(get_any(fila, "Placa Carro", default="No registrado"))
+            placa_carro = escape_html(get_any(fila, "Placa Carro", default="No registrado")).replace(" ", "").upper()
             if placa_carro == placa_buscar:
                 piso = escape_html(get_any(fila, "Piso", default=""))
                 propietario = escape_html(get_any(fila, "Propietario", default="N/A"))
