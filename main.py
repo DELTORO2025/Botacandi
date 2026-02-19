@@ -41,7 +41,7 @@ ESTADOS = {
     "A": ("🟡", "Acuerdo"),
     "R": ("🔴", "Restricción"),
     "RESTRICCION": ("🔴", "Restricción"),
-    "RESTRICCIÓN": ("🔴", "Restricción"),
+    "RESTRICIÓN": ("🔴", "Restricción"),
 }
 
 # =====================================================
@@ -134,6 +134,41 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     datos = worksheet.get_all_records()
 
+    # Expresión regular para capturar placas (ej. "HMN235" o "YTU45G")
+    placa_regex = r'\b[A-Z]{3}\d{3}\b'
+    placas_encontradas = re.findall(placa_regex, texto)
+
+    # Si se encuentra alguna placa en el texto, buscar por placa
+    if placas_encontradas:
+        placa_buscar = placas_encontradas[0]  # Tomamos la primera placa encontrada
+        for fila in datos:
+            placa_carro = escape_html(get_any(fila, "Placa Carro", default="No registrado"))
+            if placa_carro == placa_buscar:
+                piso = escape_html(get_any(fila, "Piso", default=""))
+                propietario = escape_html(get_any(fila, "Propietario", default="N/A"))
+                saldo = escape_html(get_any(fila, "Saldo", default="N/A"))
+                placa_moto = escape_html(get_any(fila, "Placa Moto", default="No registrada"))
+                stikers = escape_html(get_any(fila, "Stikers", "Stickers", default="N/A"))
+
+                estado_raw = normalizar(get_any(fila, "Estado", default=""))
+                emoji, estado_txt = ESTADOS.get(estado_raw, ("⚪", "No especificado"))
+
+                respuesta = (
+                    f"🏢 <b>Torre:</b> {get_any(fila, 'Torre', default='No especificado')}\n"
+                    f"🏠 <b>Apartamento:</b> {get_any(fila, 'Apartamento', default='No especificado')}\n"
+                    + (f"🛗 <b>Piso:</b> {piso}\n" if piso else "")
+                    + f"👤 <b>Propietario:</b> {propietario}\n"
+                    f"💰 <b>Saldo:</b> {saldo}\n"
+                    f"{emoji} <b>Estado:</b> {estado_txt}\n"
+                    f"🚗 <b>Placa carro:</b> {placa_carro}\n"
+                    f"🏍️ <b>Placa moto:</b> {placa_moto}\n"
+                    f"🏷️ <b>Stikers:</b> {stikers}"
+                )
+
+                await update.message.reply_text(respuesta, parse_mode="HTML")
+                return
+
+    # Si no se encuentra placa, buscar por apartamento
     resultado = interpretar_apto(texto, datos)
 
     if not resultado:
