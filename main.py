@@ -1,7 +1,9 @@
+import os
 import re
+import json
 import logging
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -13,35 +15,34 @@ from telegram.ext import (
 from html import escape as escape_html
 
 # =====================================================
-# 🔐 CONFIGURACIÓN
+# CONFIGURACIÓN DESDE VARIABLES DE ENTORNO
 # =====================================================
 
-TOKEN = "PON_AQUI_TU_TOKEN"
-SHEET_NAME = "PON_AQUI_EL_NOMBRE_DE_TU_HOJA"
-CREDENTIALS_FILE = "credenciales.json"
+TOKEN = os.getenv("BOT_TOKEN")
+SHEET_NAME = os.getenv("SHEET_NAME")
+GOOGLE_CREDS = os.getenv("GOOGLE_CREDS")
+
+if not TOKEN or not SHEET_NAME or not GOOGLE_CREDS:
+    raise Exception("Faltan variables de entorno.")
 
 # =====================================================
 # LOGGING
 # =====================================================
 
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
-)
+logging.basicConfig(level=logging.INFO)
 
 # =====================================================
 # GOOGLE SHEETS
 # =====================================================
 
+creds_dict = json.loads(GOOGLE_CREDS)
+
 scope = [
-    "https://spreadsheets.google.com/feeds",
+    "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
 
-creds = ServiceAccountCredentials.from_json_keyfile_name(
-    CREDENTIALS_FILE, scope
-)
-
+creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
 client = gspread.authorize(creds)
 worksheet = client.open(SHEET_NAME).sheet1
 
@@ -73,9 +74,6 @@ ESTADOS = {
 def interpretar_apto(texto, datos):
     limpio = re.sub(r"\D", "", texto)
 
-    if not limpio:
-        return None
-
     for fila in datos:
         try:
             torre = int(str(get_any(fila, "Torre")).strip())
@@ -83,101 +81,19 @@ def interpretar_apto(texto, datos):
         except:
             continue
 
-        combinado = f"{torre}{apto}"
-
         if limpio == str(apto):
             return torre, apto
 
-        if limpio == combinado:
+        if limpio == f"{torre}{apto}":
             return torre, apto
 
     return None
 
 # =====================================================
-# COMANDO START
-# =====================================================
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    mensaje = (
-        "👋 Bienvenido.\n\n"
-        "Puedes buscar por:\n"
-        "• Número de apartamento (1104, 11006, 11 1006)\n"
-        "• Placa (RPH360, HTX-213)\n"
-    )
-    await update.message.reply_text(mensaje)
-
-# =====================================================
-# FUNCIÓN PRINCIPAL
-# =====================================================
-
-async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    texto = (update.message.text or "").strip()
-
-    if not texto:
-        return
-
-    try:
-        datos = worksheet.get_all_records()
-    except Exception as e:
-        await update.message.reply_text("❌ Error leyendo la base de datos.")
-        return
-
-    # =====================================================
-    # 1️⃣ BUSCAR POR PLACA
-    # =====================================================
-
-    placa_input = re.sub(r"[^A-Za-z0-9]", "", texto).upper()
-
-    if any(c.isalpha() for c in placa_input) and any(c.isdigit() for c in placa_input):
-
-        for fila in datos:
-
-            placa_carro = re.sub(
-                r"[^A-Za-z0-9]", "",
-                str(get_any(fila, "Placa Carro", default="")).upper()
-            )
-
-            placa_moto = re.sub(
-                r"[^A-Za-z0-9]", "",
-                str(get_any(fila, "Placa Moto", default="")).upper()
-            )
-
-            if placa_input == placa_carro or placa_input == placa_moto:
-
-                return await enviar_respuesta(update, fila)
-
-        return await update.message.reply_text("❌ Placa no encontrada.")
-
-    # =====================================================
-    # 2️⃣ BUSCAR POR APARTAMENTO
-    # =====================================================
-
-    resultado = interpretar_apto(texto, datos)
-
-    if not resultado:
-        return await update.message.reply_text("❌ No encontrado.")
-
-    torre_buscar, apto_buscar = resultado
-
-    for fila in datos:
-        try:
-            torre = int(str(get_any(fila, "Torre")).strip())
-            apto = int(str(get_any(fila, "Apartamento", "Apto")).strip())
-        except:
-            continue
-
-        if torre == torre_buscar and apto == apto_buscar:
-            return await enviar_respuesta(update, fila)
-
-    await update.message.reply_text("❌ No encontrado.")
-
-# =====================================================
-# FORMATEAR RESPUESTA
+# RESPUESTA
 # =====================================================
 
 async def enviar_respuesta(update, fila):
-
     torre = get_any(fila, "Torre")
     apto = get_any(fila, "Apartamento", "Apto")
     propietario = escape_html(get_any(fila, "Propietario", default="N/A"))
@@ -203,7 +119,51 @@ async def enviar_respuesta(update, fila):
     await update.message.reply_text(respuesta, parse_mode="HTML")
 
 # =====================================================
-# INICIAR BOT
+# BUSCADOR
+# =====================================================
+
+async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    texto = (update.message.text or "").strip()
+
+    datos = worksheet.get_all_records()
+
+    placa_input = re.sub(r"[^A-Za-z0-9]", "", texto).upper()
+
+    # Buscar placa
+    if any(c.isalpha() for c in placa_input) and any(c.isdigit() for c in placa_input):
+        for fila in datos:
+            placa_carro = re.sub(r"[^A-Za-z0-9]", "", str(get_any(fila, "Placa Carro")).upper())
+            placa_moto = re.sub(r"[^A-Za-z0-9]", "", str(get_any(fila, "Placa Moto")).upper())
+
+            if placa_input == placa_carro or placa_input == placa_moto:
+                return await enviar_respuesta(update, fila)
+
+        return await update.message.reply_text("❌ Placa no encontrada.")
+
+    # Buscar apartamento
+    resultado = interpretar_apto(texto, datos)
+
+    if not resultado:
+        return await update.message.reply_text("❌ No encontrado.")
+
+    torre_buscar, apto_buscar = resultado
+
+    for fila in datos:
+        if str(get_any(fila, "Torre")) == str(torre_buscar) and \
+           str(get_any(fila, "Apartamento", "Apto")) == str(apto_buscar):
+            return await enviar_respuesta(update, fila)
+
+    await update.message.reply_text("❌ No encontrado.")
+
+# =====================================================
+# START
+# =====================================================
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Bot activo. Envía apartamento o placa.")
+
+# =====================================================
+# MAIN
 # =====================================================
 
 def main():
@@ -212,7 +172,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, buscar))
 
-    print("✅ Bot iniciado correctamente...")
+    print("Bot corriendo...")
     app.run_polling()
 
 if __name__ == "__main__":
