@@ -86,23 +86,29 @@ def interpretar_apto(texto: str, datos):
 
     # Si viene uno solo → probar combinaciones reales
     dig = numeros[0]
-
     posibles = []
 
-    # Probar torre de 1 dígito
     if len(dig) >= 4:
         posibles.append((int(dig[0]), int(dig[1:])))
 
-    # Probar torre de 2 dígitos
     if len(dig) >= 5:
         posibles.append((int(dig[:2]), int(dig[2:])))
 
-    # Verificar cuál existe realmente en el Sheet
+    # Verificar cuál existe realmente en el Sheet (Versión blindada)
     for torre_test, apto_test in posibles:
         for fila in datos:
             try:
-                torre_i = int(str(get_any(fila, "Torre", default="")).strip())
-                apto_i = int(str(get_any(fila, "Apartamento", "Apto", default="")).strip())
+                torre_val = str(get_any(fila, "Torre", default=""))
+                apto_val = str(get_any(fila, "Apartamento", "Apto", default=""))
+                
+                torre_nums = re.findall(r'\d+', torre_val)
+                apto_nums = re.findall(r'\d+', apto_val)
+                
+                if not torre_nums or not apto_nums:
+                    continue
+                    
+                torre_i = int(torre_nums[0])
+                apto_i = int(apto_nums[0])
             except:
                 continue
 
@@ -116,38 +122,54 @@ def interpretar_apto(texto: str, datos):
 # =====================================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 Envíame el número del apartamento.\n\n"
+        "👋 Envíame el número del apartamento o la placa.\n\n"
         "Ejemplos:\n"
         "1104\n"
         "11006\n"
-        "11 1278\n"
-        "Torre 1 Apto 1006"
+        "Torre 1 Apto 1006\n"
+        "ABC123\n"
+        "XYZ 12D"
     )
 
 # =====================================================
 # BÚSQUEDA
 # =====================================================
 async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    texto = (update.message.text or "").strip()
+    # CORRECCIÓN 1: Convertimos todo a mayúsculas desde el principio
+    texto = (update.message.text or "").strip().upper()
     if not texto:
         return
 
     datos = worksheet.get_all_records()
 
-    # Expresión regular para capturar placas (ej. "HMN235" o "YTU45G")
-    placa_regex = r'\b[A-Z]{3}\d{3}\b'
+    # CORRECCIÓN 2: Expresión regular que detecta carros (XXX123) y motos (XXX12A)
+    # y permite que pongan espacios o guiones en el medio.
+    placa_regex = r'[A-Z]{3}[ -]*\d{2}[0-9A-Z]'
     placas_encontradas = re.findall(placa_regex, texto)
 
-    # Si se encuentra alguna placa en el texto, buscar por placa
     if placas_encontradas:
-        placa_buscar = placas_encontradas[0].upper()  # Convertir la placa a mayúsculas
+        # Limpiamos la placa que escribió el usuario (le quitamos espacios/guiones)
+        placa_buscar = re.sub(r'[^A-Z0-9]', '', placas_encontradas[0])
+        
         for fila in datos:
-            placa_carro = escape_html(get_any(fila, "Placa Carro", default="No registrado")).replace(" ", "").upper()
-            if placa_carro == placa_buscar:
+            # Traemos ambas placas del excel
+            placa_carro_raw = str(get_any(fila, "Placa Carro", default=""))
+            placa_moto_raw = str(get_any(fila, "Placa Moto", default=""))
+            
+            # Limpiamos las placas del Excel por si tienen espacios accidentales
+            placa_carro_limpia = re.sub(r'[^A-Z0-9]', '', placa_carro_raw.upper())
+            placa_moto_limpia = re.sub(r'[^A-Z0-9]', '', placa_moto_raw.upper())
+
+            # CORRECCIÓN 3: Comparamos contra la placa de carro O la placa de moto
+            if placa_buscar == placa_carro_limpia or placa_buscar == placa_moto_limpia:
+                
+                # Rescatamos los valores reales para mostrarlos tal cual en el mensaje
+                placa_carro_mostrar = escape_html(placa_carro_raw) or "No registrado"
+                placa_moto_mostrar = escape_html(placa_moto_raw) or "No registrada"
+                
                 piso = escape_html(get_any(fila, "Piso", default=""))
                 propietario = escape_html(get_any(fila, "Propietario", default="N/A"))
                 saldo = escape_html(get_any(fila, "Saldo", default="N/A"))
-                placa_moto = escape_html(get_any(fila, "Placa Moto", default="No registrada"))
                 stikers = escape_html(get_any(fila, "Stikers", "Stickers", default="N/A"))
 
                 estado_raw = normalizar(get_any(fila, "Estado", default=""))
@@ -160,27 +182,42 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     + f"👤 <b>Propietario:</b> {propietario}\n"
                     f"💰 <b>Saldo:</b> {saldo}\n"
                     f"{emoji} <b>Estado:</b> {estado_txt}\n"
-                    f"🚗 <b>Placa carro:</b> {placa_carro}\n"
-                    f"🏍️ <b>Placa moto:</b> {placa_moto}\n"
-                    f"🏷️ <b>Stikers:</b> {stikers}"
+                    f"🚗 <b>Placa carro:</b> {placa_carro_mostrar}\n"
+                    f"🏍️ <b>Placa moto:</b> {placa_moto_mostrar}\n"
+                    f"🏷️️ <b>Stikers:</b> {stikers}"
                 )
 
                 await update.message.reply_text(respuesta, parse_mode="HTML")
                 return
 
+        # Si entra por placa pero no la encuentra en la base de datos
+        await update.message.reply_text(f"❌ La placa {placa_buscar} no se encontró en la base de datos.")
+        return
+
+    # =====================================================
     # Si no se encuentra placa, buscar por apartamento
+    # =====================================================
     resultado = interpretar_apto(texto, datos)
 
     if not resultado:
-        await update.message.reply_text("❌ No encontrado.")
+        await update.message.reply_text("❌ No encontrado o formato no reconocido.")
         return
 
     torre_buscar, apto_buscar = resultado
 
     for fila in datos:
         try:
-            torre_i = int(str(get_any(fila, "Torre", default="")).strip())
-            apto_i = int(str(get_any(fila, "Apartamento", "Apto", default="")).strip())
+            torre_val = str(get_any(fila, "Torre", default=""))
+            apto_val = str(get_any(fila, "Apartamento", "Apto", default=""))
+            
+            torre_nums = re.findall(r'\d+', torre_val)
+            apto_nums = re.findall(r'\d+', apto_val)
+            
+            if not torre_nums or not apto_nums:
+                continue
+                
+            torre_i = int(torre_nums[0])
+            apto_i = int(apto_nums[0])
         except:
             continue
 
